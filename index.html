@@ -28,8 +28,6 @@
 const { useState, useMemo, useRef, useEffect } = React;
 
 // ===== AUTENTICAÇÃO =====
-// ALTERE A SENHA AQUI (será convertida em hash na primeira execução)
-const SENHA_PADRAO = 'cas2025'; // Mude para sua senha desejada
 const TIMEOUT_MINUTOS = 60; // Tempo de sessão em minutos
 
 const hashSenha = async (senha) => {
