@@ -1,0 +1,1260 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestor de Demandas Comunitárias</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); min-height: 100vh; }
+    #root { min-height: 100vh; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #f1f1f1; }
+    ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 3px; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .fade-in { animation: fadeIn 0.3s ease-out; }
+    .pulse { animation: pulse 2s infinite; }
+    .tag { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 500; margin: 1px; }
+    input:focus, select:focus, textarea:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useRef, useEffect } = React;
+
+// ===== AUTENTICAÇÃO =====
+// ALTERE A SENHA AQUI (será convertida em hash na primeira execução)
+const SENHA_PADRAO = 'cas2025'; // Mude para sua senha desejada
+const TIMEOUT_MINUTOS = 60; // Tempo de sessão em minutos
+
+const hashSenha = async (senha) => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(senha + 'gestor-demandas-salt-v4');
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
+const LoginScreen = ({ onLogin, config }) => {
+  const [senha, setSenha] = useState('');
+  const [erro, setErro] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [primeiroAcesso, setPrimeiroAcesso] = useState(false);
+  const [novaSenha, setNovaSenha] = useState('');
+  const [confirmarSenha, setConfirmarSenha] = useState('');
+
+  useEffect(() => {
+    const hashSalvo = localStorage.getItem('gestor-v4-auth-hash');
+    if (!hashSalvo) setPrimeiroAcesso(true);
+  }, []);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setErro('');
+    
+    try {
+      const hashSalvo = localStorage.getItem('gestor-v4-auth-hash');
+      const hashDigitado = await hashSenha(senha);
+      
+      if (hashSalvo === hashDigitado) {
+        const sessao = { timestamp: Date.now(), valido: true };
+        sessionStorage.setItem('gestor-v4-sessao', JSON.stringify(sessao));
+        onLogin(true);
+      } else {
+        setErro('Senha incorreta');
+      }
+    } catch (err) {
+      setErro('Erro ao verificar senha');
+    }
+    setLoading(false);
+  };
+
+  const handleCriarSenha = async (e) => {
+    e.preventDefault();
+    if (novaSenha.length < 4) {
+      setErro('Senha deve ter pelo menos 4 caracteres');
+      return;
+    }
+    if (novaSenha !== confirmarSenha) {
+      setErro('Senhas não coincidem');
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const hash = await hashSenha(novaSenha);
+      localStorage.setItem('gestor-v4-auth-hash', hash);
+      const sessao = { timestamp: Date.now(), valido: true };
+      sessionStorage.setItem('gestor-v4-sessao', JSON.stringify(sessao));
+      onLogin(true);
+    } catch (err) {
+      setErro('Erro ao criar senha');
+    }
+    setLoading(false);
+  };
+
+  const usarSenhaPadrao = async () => {
+    setLoading(true);
+    try {
+      const hash = await hashSenha(SENHA_PADRAO);
+      localStorage.setItem('gestor-v4-auth-hash', hash);
+      const sessao = { timestamp: Date.now(), valido: true };
+      sessionStorage.setItem('gestor-v4-sessao', JSON.stringify(sessao));
+      onLogin(true);
+    } catch (err) {
+      setErro('Erro ao configurar');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `linear-gradient(135deg, ${config.corPrimaria} 0%, ${config.corSecundaria} 100%)`, padding: '20px' }}>
+      <div style={{ background: 'white', borderRadius: '16px', padding: '32px', maxWidth: '380px', width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }} className="fade-in">
+        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+          <div style={{ width: '60px', height: '60px', background: `linear-gradient(135deg, ${config.corPrimaria}, ${config.corSecundaria})`, borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+          </div>
+          <h1 style={{ fontSize: '18px', fontWeight: '700', color: '#111827', margin: '0 0 4px' }}>{config.titulo}</h1>
+          <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>{config.subtitulo}</p>
+        </div>
+
+        {primeiroAcesso ? (
+          <form onSubmit={handleCriarSenha}>
+            <div style={{ background: '#eff6ff', borderRadius: '8px', padding: '12px', marginBottom: '16px', border: '1px solid #bfdbfe' }}>
+              <p style={{ fontSize: '11px', color: '#1e40af', margin: 0 }}>Primeiro acesso! Configure uma senha para proteger seus dados.</p>
+            </div>
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#374151', marginBottom: '4px' }}>Nova Senha</label>
+              <input type="password" value={novaSenha} onChange={e => setNovaSenha(e.target.value)} placeholder="Mínimo 4 caracteres" style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '14px', outline: 'none' }} autoFocus/>
+            </div>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#374151', marginBottom: '4px' }}>Confirmar Senha</label>
+              <input type="password" value={confirmarSenha} onChange={e => setConfirmarSenha(e.target.value)} placeholder="Digite novamente" style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '14px', outline: 'none' }}/>
+            </div>
+            {erro && <p style={{ color: '#dc2626', fontSize: '11px', marginBottom: '12px', textAlign: 'center' }}>{erro}</p>}
+            <button type="submit" disabled={loading} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: config.corDestaque, color: 'white', fontSize: '14px', fontWeight: '600', cursor: 'pointer', marginBottom: '10px' }}>{loading ? 'Configurando...' : 'Criar Senha'}</button>
+            <button type="button" onClick={usarSenhaPadrao} disabled={loading} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #d1d5db', background: 'white', color: '#6b7280', fontSize: '12px', cursor: 'pointer' }}>Usar senha padrão ({SENHA_PADRAO})</button>
+          </form>
+        ) : (
+          <form onSubmit={handleLogin}>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#374151', marginBottom: '4px' }}>Senha de Acesso</label>
+              <input type="password" value={senha} onChange={e => setSenha(e.target.value)} placeholder="Digite sua senha" style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '14px', outline: 'none' }} autoFocus/>
+            </div>
+            {erro && <p style={{ color: '#dc2626', fontSize: '11px', marginBottom: '12px', textAlign: 'center' }}>{erro}</p>}
+            <button type="submit" disabled={loading} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: config.corPrimaria, color: 'white', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>{loading ? 'Verificando...' : 'Entrar'}</button>
+          </form>
+        )}
+
+        <p style={{ fontSize: '10px', color: '#9ca3af', textAlign: 'center', marginTop: '20px' }}>Dados armazenados localmente no navegador</p>
+      </div>
+    </div>
+  );
+};
+
+// ===== CONFIGURAÇÕES =====
+const configPadrao = { titulo: 'Gestor de Demandas', subtitulo: 'Gab. Dep. Rogério Morro da Cruz', corPrimaria: '#1e3a5f', corSecundaria: '#2d5a87', corDestaque: '#10b981' };
+
+const statusOptions = [
+  { value: 'entrada', label: 'Entrada', color: '#6b7280' },
+  { value: 'aguardando_envio', label: 'Aguardando Envio', color: '#8b5cf6' },
+  { value: 'enviado', label: 'Enviado', color: '#3b82f6' },
+  { value: 'aguardando_resposta', label: 'Aguardando Resposta', color: '#f59e0b' },
+  { value: 'em_providencia', label: 'Em Providência', color: '#06b6d4' },
+  { value: 'concluido', label: 'Concluído', color: '#10b981' },
+  { value: 'arquivado', label: 'Arquivado', color: '#4b5563' }
+];
+
+const prioridadeOptions = [
+  { value: 'baixa', label: 'Baixa', color: '#6b7280' },
+  { value: 'media', label: 'Média', color: '#f59e0b' },
+  { value: 'alta', label: 'Alta', color: '#ef4444' },
+  { value: 'urgente', label: 'Urgente', color: '#dc2626' }
+];
+
+const contextosPadrao = ['@telefone', '@email', '@reunião', '@SEI', '@visita', '@gabinete'];
+const eixosIniciais = ['Saneamento', 'Iluminação', 'Regularização Fundiária', 'Saúde', 'Educação', 'Segurança', 'Infraestrutura', 'Meio Ambiente', 'Habitação', 'Transporte'];
+const origensIniciais = ['Audiência Pública', 'Visita à Comunidade', 'Reunião no Gabinete', 'Ofício Recebido', 'Redes Sociais', 'Telefone', 'E-mail', 'Indicação Parlamentar'];
+
+const demandaVazia = {
+  id: null, comunidade: '', eixosTematicos: [], origem: '', dataEntrada: new Date().toISOString().split('T')[0],
+  contatoNome: '', contatoTelefone: '', contatoEmail: '',
+  objeto: '', documentos: '',
+  numeroOficio: '', processoSEI: '', orgaoDestinatario: '', dataEnvio: '',
+  resposta: '', dataResposta: '',
+  status: 'entrada', prioridade: 'media', responsavel: '',
+  proximaAcao: '', proximaAcaoContexto: '', proximaAcaoResponsavel: '', proximaAcaoPrazo: '',
+  providencias: [], historico: [], observacoes: ''
+};
+
+// ===== UTILIDADES =====
+const formatDate = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '-';
+const calcDias = (ini, fim) => ini ? Math.floor((new Date(fim || new Date()) - new Date(ini)) / 86400000) : null;
+const hoje = new Date().toISOString().split('T')[0];
+
+// ===== ÍCONES =====
+const Icon = ({ name, size = 18, color = 'currentColor' }) => {
+  const paths = {
+    home: <><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>,
+    list: <><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></>,
+    plus: <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
+    search: <><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>,
+    filter: <><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></>,
+    x: <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
+    eye: <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>,
+    edit: <><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></>,
+    trash: <><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></>,
+    save: <><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></>,
+    upload: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></>,
+    download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></>,
+    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></>,
+    users: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>,
+    building: <><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/></>,
+    tag: <><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></>,
+    messageSquare: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></>,
+    alertTriangle: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
+    clock: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
+    checkCircle: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>,
+    target: <><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></>,
+    zap: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></>,
+    history: <><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></>,
+    chevronUp: <><polyline points="18 15 12 9 6 15"/></>,
+    chevronDown: <><polyline points="6 9 12 15 18 9"/></>,
+    phone: <><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></>,
+    mail: <><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></>,
+    clipboard: <><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></>,
+    fileText: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></>,
+    arrowRight: <><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></>,
+    merge: <><path d="m8 6 4-4 4 4"/><path d="M12 2v10.3a4 4 0 0 1-1.172 2.872L4 22"/><path d="m20 22-5-5"/></>,
+    logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>,
+    key: <><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></>
+  };
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
+};
+
+// ===== COMPONENTES AUXILIARES =====
+const Badge = ({ children, color }) => (
+  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: '600', background: `${color}18`, color }}>{children}</span>
+);
+
+const StatCard = ({ icon, title, value, subtitle, color, alert }) => (
+  <div style={{ background: 'white', borderRadius: '12px', padding: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', borderLeft: `4px solid ${color}`, position: 'relative' }}>
+    {alert && <span className="pulse" style={{ position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: '50%', background: '#ef4444' }}/>}
+    <p style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>{title}</p>
+    <p style={{ fontSize: '22px', fontWeight: '700', color: '#111827' }}>{value}</p>
+    {subtitle && <p style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>{subtitle}</p>}
+  </div>
+);
+
+const AlertBox = ({ icon, title, count, items, color, onClick }) => (
+  <div style={{ background: 'white', borderRadius: '10px', padding: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', borderLeft: `3px solid ${color}` }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+      {icon}<span style={{ fontSize: '11px', fontWeight: '600', color: '#374151' }}>{title}</span>
+      <span style={{ background: color, color: 'white', fontSize: '9px', padding: '1px 6px', borderRadius: '8px' }}>{count}</span>
+    </div>
+    {items.length === 0 ? <p style={{ fontSize: '10px', color: '#9ca3af' }}>Nenhum</p> : (
+      <div style={{ maxHeight: '120px', overflowY: 'auto' }}>
+        {items.slice(0, 4).map((d, i) => (
+          <div key={i} onClick={() => onClick(d)} style={{ padding: '4px 6px', background: i % 2 === 0 ? '#f9fafb' : 'white', borderRadius: '4px', marginBottom: '2px', cursor: 'pointer', fontSize: '10px' }}>
+            <div style={{ fontWeight: '500', color: '#374151' }}>{d.comunidade}</div>
+            <div style={{ color: '#6b7280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.objeto?.substring(0, 40)}...</div>
+          </div>
+        ))}
+        {items.length > 4 && <p style={{ fontSize: '9px', color: '#6b7280', textAlign: 'center' }}>+{items.length - 4} mais</p>}
+      </div>
+    )}
+  </div>
+);
+
+// ===== COMPONENTE PRINCIPAL =====
+function App() {
+  // ===== TODOS OS ESTADOS PRIMEIRO (Regra dos Hooks do React) =====
+  const [autenticado, setAutenticado] = useState(false);
+  const [verificandoAuth, setVerificandoAuth] = useState(true);
+
+  // Estados carregados do localStorage
+  const loadState = (key, fallback) => {
+    try { const s = localStorage.getItem('gestor-v4'); if (s) { const p = JSON.parse(s); return p[key] ?? fallback; } } catch(e) {} return fallback;
+  };
+  
+  const [demandas, setDemandas] = useState(() => loadState('demandas', []));
+  const [comunidades, setComunidades] = useState(() => loadState('comunidades', []));
+  const [orgaos, setOrgaos] = useState(() => loadState('orgaos', []));
+  const [eixos, setEixos] = useState(() => loadState('eixos', eixosIniciais));
+  const [origens, setOrigens] = useState(() => loadState('origens', origensIniciais));
+  const [config, setConfig] = useState(() => loadState('config', configPadrao));
+
+  // Estados de UI (DEVEM vir antes de qualquer return)
+  const [view, setView] = useState('dashboard');
+  const [demandaAtual, setDemandaAtual] = useState({...demandaVazia});
+  const [editando, setEditando] = useState(false);
+  const [selecionada, setSelecionada] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+  const [busca, setBusca] = useState('');
+  const [filtros, setFiltros] = useState({ comunidade: '', status: '', prioridade: '', orgao: '', eixo: '', origem: '', comAcao: '', comResposta: '' });
+  const [mostrarFiltros, setMostrarFiltros] = useState(false);
+  const [modal, setModal] = useState(null);
+  const [respIdx, setRespIdx] = useState(0);
+  const [novoItem, setNovoItem] = useState('');
+  const [novaProv, setNovaProv] = useState('');
+  const [novoHist, setNovoHist] = useState({ tipo: 'Ligação', descricao: '' });
+  const [unificar, setUnificar] = useState({ de: '', para: '' });
+  const fileRef = useRef(null);
+
+  // ===== MEMOS (devem vir antes de qualquer return condicional) =====
+  const alertas = useMemo(() => {
+    const ativos = d => !['concluido', 'arquivado'].includes(d.status);
+    return {
+      semResposta30d: demandas.filter(d => ['enviado', 'aguardando_resposta'].includes(d.status) && calcDias(d.dataEnvio, null) > 30),
+      urgenteSemAcao: demandas.filter(d => ativos(d) && ['urgente', 'alta'].includes(d.prioridade) && !d.proximaAcao),
+      prazoVencido: demandas.filter(d => ativos(d) && d.proximaAcaoPrazo && d.proximaAcaoPrazo < hoje),
+      semAcao: demandas.filter(d => ativos(d) && !d.proximaAcao),
+      provVencida: demandas.filter(d => ativos(d) && d.providencias?.some(p => !p.done && p.prazo && p.prazo < hoje))
+    };
+  }, [demandas]);
+
+  const totalAlertas = alertas.semResposta30d.length + alertas.urgenteSemAcao.length + alertas.prazoVencido.length;
+
+  const stats = useMemo(() => ({
+    total: demandas.length,
+    ativos: demandas.filter(d => !['concluido', 'arquivado'].includes(d.status)).length,
+    comResp: demandas.filter(d => d.resposta).length,
+    urgentes: demandas.filter(d => ['urgente', 'alta'].includes(d.prioridade)).length,
+    porStatus: statusOptions.map(s => ({ ...s, qtd: demandas.filter(d => d.status === s.value).length })),
+    porEixo: eixos.map(e => ({ nome: e, qtd: demandas.filter(d => d.eixosTematicos?.includes(e)).length })).filter(e => e.qtd > 0).sort((a,b) => b.qtd - a.qtd)
+  }), [demandas, eixos]);
+
+  const filtradas = useMemo(() => {
+    return demandas.filter(d => {
+      if (busca) {
+        const b = busca.toLowerCase();
+        const txt = [d.objeto, d.comunidade, d.numeroOficio, d.processoSEI, d.orgaoDestinatario, d.resposta, d.proximaAcao, d.observacoes, d.contatoNome, d.documentos].join(' ').toLowerCase();
+        if (!txt.includes(b)) return false;
+      }
+      if (filtros.comunidade && d.comunidade !== filtros.comunidade) return false;
+      if (filtros.status && d.status !== filtros.status) return false;
+      if (filtros.prioridade && d.prioridade !== filtros.prioridade) return false;
+      if (filtros.orgao && d.orgaoDestinatario !== filtros.orgao) return false;
+      if (filtros.eixo && !d.eixosTematicos?.includes(filtros.eixo)) return false;
+      if (filtros.origem && d.origem !== filtros.origem) return false;
+      if (filtros.comAcao === 's' && !d.proximaAcao) return false;
+      if (filtros.comAcao === 'n' && d.proximaAcao) return false;
+      if (filtros.comResposta === 's' && !d.resposta) return false;
+      if (filtros.comResposta === 'n' && d.resposta) return false;
+      return true;
+    });
+  }, [demandas, busca, filtros]);
+
+  const comResposta = useMemo(() => {
+    let lista = demandas.filter(d => d.resposta);
+    if (busca) {
+      const b = busca.toLowerCase();
+      lista = lista.filter(d => [d.objeto, d.comunidade, d.orgaoDestinatario, d.resposta].join(' ').toLowerCase().includes(b));
+    }
+    return lista.sort((a, b) => (b.dataResposta || '').localeCompare(a.dataResposta || ''));
+  }, [demandas, busca]);
+
+  // ===== EFEITOS =====
+  // Verificar sessão ao carregar
+  useEffect(() => {
+    const verificarSessao = () => {
+      try {
+        const sessaoStr = sessionStorage.getItem('gestor-v4-sessao');
+        const hashSalvo = localStorage.getItem('gestor-v4-auth-hash');
+        
+        if (!hashSalvo) {
+          setAutenticado(false);
+          setVerificandoAuth(false);
+          return;
+        }
+        
+        if (sessaoStr) {
+          const sessao = JSON.parse(sessaoStr);
+          const agora = Date.now();
+          const limiteMs = TIMEOUT_MINUTOS * 60 * 1000;
+          
+          if (sessao.valido && (agora - sessao.timestamp) < limiteMs) {
+            sessionStorage.setItem('gestor-v4-sessao', JSON.stringify({ ...sessao, timestamp: agora }));
+            setAutenticado(true);
+          } else {
+            sessionStorage.removeItem('gestor-v4-sessao');
+            setAutenticado(false);
+          }
+        }
+      } catch (e) {
+        setAutenticado(false);
+      }
+      setVerificandoAuth(false);
+    };
+    
+    verificarSessao();
+  }, []);
+
+  // Salvar automaticamente
+  useEffect(() => {
+    if (!autenticado) return; // Não salvar se não estiver logado
+    setSalvando(true);
+    const data = { demandas, comunidades, orgaos, eixos, origens, config, updated: new Date().toISOString() };
+    localStorage.setItem('gestor-v4', JSON.stringify(data));
+    const t = setTimeout(() => setSalvando(false), 400);
+    return () => clearTimeout(t);
+  }, [demandas, comunidades, orgaos, eixos, origens, config, autenticado]);
+
+  // Navegação por teclado nas respostas
+  useEffect(() => {
+    const handler = (e) => { 
+      if (view === 'respostas') { 
+        if (e.key === 'ArrowUp') { e.preventDefault(); setRespIdx(p => p > 0 ? p - 1 : comResposta.length - 1); } 
+        if (e.key === 'ArrowDown') { e.preventDefault(); setRespIdx(p => p < comResposta.length - 1 ? p + 1 : 0); } 
+      } 
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [view, comResposta.length]);
+
+  // ===== FUNÇÕES DE AUTENTICAÇÃO =====
+  const fazerLogin = (status) => {
+    setAutenticado(status);
+    setVerificandoAuth(false);
+  };
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('gestor-v4-sessao');
+    setAutenticado(false);
+  };
+
+  const handleAlterarSenha = async () => {
+    const novaSenha = prompt('Digite a nova senha (mínimo 4 caracteres):');
+    if (!novaSenha || novaSenha.length < 4) {
+      alert('Senha deve ter pelo menos 4 caracteres');
+      return;
+    }
+    const confirmar = prompt('Confirme a nova senha:');
+    if (novaSenha !== confirmar) {
+      alert('Senhas não coincidem');
+      return;
+    }
+    try {
+      const hash = await hashSenha(novaSenha);
+      localStorage.setItem('gestor-v4-auth-hash', hash);
+      alert('Senha alterada com sucesso!');
+    } catch (e) {
+      alert('Erro ao alterar senha');
+    }
+  };
+
+  // ===== VERIFICAÇÕES DE AUTENTICAÇÃO (após todos os hooks) =====
+  if (verificandoAuth) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `linear-gradient(135deg, ${config.corPrimaria} 0%, ${config.corSecundaria} 100%)` }}>
+        <div style={{ color: 'white', textAlign: 'center' }}>
+          <div style={{ width: '40px', height: '40px', border: '3px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', margin: '0 auto 12px', animation: 'spin 1s linear infinite' }}/>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <p style={{ fontSize: '12px', opacity: 0.8 }}>Carregando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!autenticado) {
+    return <LoginScreen onLogin={fazerLogin} config={config} />;
+  }
+
+  // ===== A PARTIR DAQUI, USUÁRIO ESTÁ AUTENTICADO =====
+
+  const limparFiltros = () => { setFiltros({ comunidade: '', status: '', prioridade: '', orgao: '', eixo: '', origem: '', comAcao: '', comResposta: '' }); setBusca(''); };
+
+  // ===== CRUD =====
+  const salvar = () => {
+    if (!demandaAtual.comunidade || !demandaAtual.objeto) { alert('Preencha comunidade e objeto.'); return; }
+    // Auto-adicionar
+    if (demandaAtual.comunidade && !comunidades.includes(demandaAtual.comunidade)) setComunidades(p => [...p, demandaAtual.comunidade].sort((a,b)=>a.localeCompare(b)));
+    if (demandaAtual.orgaoDestinatario && !orgaos.includes(demandaAtual.orgaoDestinatario)) setOrgaos(p => [...p, demandaAtual.orgaoDestinatario].sort((a,b)=>a.localeCompare(b)));
+    
+    let hist = demandaAtual.historico || [];
+    if (editando) {
+      const orig = demandas.find(d => d.id === demandaAtual.id);
+      if (orig && orig.status !== demandaAtual.status) {
+        hist = [...hist, { data: hoje, tipo: 'Status', desc: `Alterado para "${statusOptions.find(s=>s.value===demandaAtual.status)?.label}"`, resp: demandaAtual.responsavel || '-' }];
+      }
+    } else {
+      hist = [{ data: hoje, tipo: 'Criação', desc: 'Demanda cadastrada', resp: demandaAtual.responsavel || '-' }];
+    }
+    
+    const nova = { ...demandaAtual, historico: hist };
+    if (editando) {
+      setDemandas(p => p.map(d => d.id === demandaAtual.id ? nova : d));
+    } else {
+      const id = Math.max(0, ...demandas.map(d => d.id)) + 1;
+      setDemandas(p => [...p, { ...nova, id }]);
+    }
+    setDemandaAtual({...demandaVazia});
+    setEditando(false);
+    setView('lista');
+  };
+
+  const editar = (d) => { setDemandaAtual({...demandaVazia, ...d}); setEditando(true); setView('formulario'); setSelecionada(null); };
+  const excluir = (id) => { if(confirm('Excluir?')) { setDemandas(p=>p.filter(d=>d.id!==id)); setSelecionada(null); }};
+  const nova = () => { setDemandaAtual({...demandaVazia}); setEditando(false); setView('formulario'); };
+
+  // Providências
+  const addProv = () => {
+    if (!novaProv.trim()) return;
+    setDemandaAtual(p => ({ ...p, providencias: [...(p.providencias||[]), { id: Date.now(), texto: novaProv.trim(), prazo: '', done: false }] }));
+    setNovaProv('');
+  };
+  const toggleProv = (id) => setDemandaAtual(p => ({ ...p, providencias: p.providencias.map(x => x.id === id ? { ...x, done: !x.done } : x) }));
+  const delProv = (id) => setDemandaAtual(p => ({ ...p, providencias: p.providencias.filter(x => x.id !== id) }));
+  const setPrazoProv = (id, prazo) => setDemandaAtual(p => ({ ...p, providencias: p.providencias.map(x => x.id === id ? { ...x, prazo } : x) }));
+
+  // Histórico
+  const addHist = () => {
+    if (!novoHist.descricao.trim()) return;
+    setDemandaAtual(p => ({ ...p, historico: [...(p.historico||[]), { data: hoje, tipo: novoHist.tipo, desc: novoHist.descricao.trim(), resp: p.responsavel || '-' }] }));
+    setNovoHist({ tipo: 'Ligação', descricao: '' });
+  };
+
+  // Eixos temáticos toggle
+  const toggleEixo = (e) => {
+    setDemandaAtual(p => ({
+      ...p,
+      eixosTematicos: p.eixosTematicos?.includes(e) ? p.eixosTematicos.filter(x=>x!==e) : [...(p.eixosTematicos||[]), e]
+    }));
+  };
+
+  // Import/Export
+  const exportar = () => {
+    const data = { v: '4.0', demandas, comunidades, orgaos, eixos, origens, config };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `demandas-${hoje}.json`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importar = (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if (d.demandas) setDemandas(d.demandas);
+        if (d.comunidades) setComunidades(d.comunidades);
+        if (d.orgaos) setOrgaos(d.orgaos);
+        if (d.eixos) setEixos(d.eixos);
+        if (d.origens) setOrigens(d.origens);
+        if (d.config) setConfig(d.config);
+        alert('Importado!');
+      } catch { alert('Erro no arquivo.'); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const exportarCSV = () => {
+    const h = ['ID','Comunidade','Objeto','Eixos','Origem','Status','Prioridade','Ofício','SEI','Órgão','Envio','Resposta','Data Resp','Próx.Ação','Prazo Ação','Responsável'];
+    const rows = filtradas.map(d => [d.id, d.comunidade, `"${(d.objeto||'').replace(/"/g,'""')}"`, (d.eixosTematicos||[]).join(';'), d.origem, statusOptions.find(s=>s.value===d.status)?.label, prioridadeOptions.find(p=>p.value===d.prioridade)?.label, d.numeroOficio, d.processoSEI, d.orgaoDestinatario, formatDate(d.dataEnvio), `"${(d.resposta||'').replace(/"/g,'""')}"`, formatDate(d.dataResposta), `"${(d.proximaAcao||'').replace(/"/g,'""')}"`, formatDate(d.proximaAcaoPrazo), d.responsavel]);
+    const csv = [h.join(';'), ...rows.map(r=>r.join(';'))].join('\n');
+    const blob = new Blob(['\uFEFF'+csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `demandas-${hoje}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Gerenciamento de listas
+  const addItem = (setter, lista) => {
+    if (!novoItem.trim() || lista.includes(novoItem.trim())) return;
+    setter(p => [...p, novoItem.trim()].sort((a,b)=>a.localeCompare(b)));
+    setNovoItem('');
+  };
+  const delItem = (setter, lista, item, campo) => {
+    const vinc = demandas.filter(d => campo === 'comunidade' ? d.comunidade === item : campo === 'orgao' ? d.orgaoDestinatario === item : d.eixosTematicos?.includes(item)).length;
+    if (vinc > 0) { alert(`${vinc} demanda(s) vinculada(s).`); return; }
+    if (confirm(`Excluir "${item}"?`)) setter(p => p.filter(x => x !== item));
+  };
+  const executarUnificar = (setter, lista, campo) => {
+    const { de, para } = unificar;
+    if (!de || !para || de === para) return;
+    const qtd = demandas.filter(d => campo === 'comunidade' ? d.comunidade === de : d.orgaoDestinatario === de).length;
+    if (!confirm(`Mover ${qtd} demanda(s) de "${de}" para "${para}"?`)) return;
+    setDemandas(p => p.map(d => {
+      if (campo === 'comunidade' && d.comunidade === de) return { ...d, comunidade: para };
+      if (campo === 'orgao' && d.orgaoDestinatario === de) return { ...d, orgaoDestinatario: para };
+      return d;
+    }));
+    setter(p => p.filter(x => x !== de));
+    setUnificar({ de: '', para: '' });
+  };
+
+  // Navegação respostas
+  // ===== ESTILOS =====
+  const s = {
+    header: { background: `linear-gradient(135deg, ${config.corPrimaria} 0%, ${config.corSecundaria} 100%)`, color: 'white', padding: '12px 20px', boxShadow: '0 2px 10px rgba(0,0,0,0.15)' },
+    headerIn: { maxWidth: '1400px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' },
+    logo: { display: 'flex', alignItems: 'center', gap: '10px' },
+    title: { fontSize: '16px', fontWeight: '700', margin: 0 },
+    subtitle: { fontSize: '10px', opacity: 0.85, margin: 0 },
+    nav: { display: 'flex', gap: '3px', flexWrap: 'wrap' },
+    navBtn: (a) => ({ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 10px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: '500', background: a ? 'rgba(255,255,255,0.2)' : 'transparent', color: 'white' }),
+    actions: { display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' },
+    btn: { display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: '10px', background: 'rgba(255,255,255,0.1)', color: 'white' },
+    btnPri: { display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: '600', background: config.corDestaque, color: 'white' },
+    main: { maxWidth: '1400px', margin: '0 auto', padding: '16px 20px' },
+    grid2: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', marginBottom: '16px' },
+    grid4: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '16px' },
+    card: { background: 'white', borderRadius: '10px', padding: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' },
+    cardTitle: { fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' },
+    searchBar: { background: 'white', borderRadius: '10px', padding: '10px 14px', marginBottom: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' },
+    searchRow: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' },
+    searchInput: { flex: 1, minWidth: '200px', padding: '7px 10px 7px 32px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '12px', outline: 'none' },
+    select: { padding: '7px 8px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '11px', outline: 'none', background: 'white' },
+    table: { width: '100%', borderCollapse: 'collapse' },
+    th: { textAlign: 'left', padding: '8px 10px', fontSize: '9px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', borderBottom: '2px solid #e5e7eb', background: '#f9fafb' },
+    td: { padding: '8px 10px', fontSize: '11px', borderBottom: '1px solid #e5e7eb', color: '#374151' },
+    formGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' },
+    formGroup: { marginBottom: '10px' },
+    label: { display: 'block', fontSize: '10px', fontWeight: '600', color: '#374151', marginBottom: '3px' },
+    input: { width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '12px', outline: 'none' },
+    textarea: { width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '12px', outline: 'none', minHeight: '70px', resize: 'vertical', fontFamily: 'inherit' },
+    modal: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' },
+    modalBox: { background: 'white', borderRadius: '12px', maxWidth: '600px', width: '100%', maxHeight: '85vh', overflow: 'auto', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' },
+    modalHead: { padding: '12px 16px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: 'white' },
+    modalBody: { padding: '16px' },
+    closeBtn: { background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#6b7280' }
+  };
+
+  // ===== DASHBOARD =====
+  const renderDashboard = () => (
+    <div className="fade-in">
+      <div style={s.grid4}>
+        <StatCard icon={<Icon name="fileText" size={18} color={config.corPrimaria}/>} title="Total" value={stats.total} subtitle={`${stats.ativos} ativas`} color={config.corPrimaria}/>
+        <StatCard icon={<Icon name="clock" size={18} color="#f59e0b"/>} title="Aguardando" value={demandas.filter(d=>d.status==='aguardando_resposta').length} color="#f59e0b"/>
+        <StatCard icon={<Icon name="messageSquare" size={18} color="#10b981"/>} title="Com Resposta" value={stats.comResp} color="#10b981"/>
+        <StatCard icon={<Icon name="zap" size={18} color="#ef4444"/>} title="Alta/Urgente" value={stats.urgentes} color="#ef4444" alert={alertas.urgenteSemAcao.length > 0}/>
+      </div>
+
+      <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <Icon name="alertTriangle" size={16} color="#ef4444"/> Atenção Necessária
+        {totalAlertas > 0 && <span style={{ background: '#ef4444', color: 'white', fontSize: '10px', padding: '2px 8px', borderRadius: '10px' }}>{totalAlertas}</span>}
+      </h3>
+      <div style={s.grid2}>
+        <AlertBox icon={<Icon name="clock" size={14} color="#f59e0b"/>} title="Sem resposta há 30+ dias" count={alertas.semResposta30d.length} items={alertas.semResposta30d} color="#f59e0b" onClick={d => setSelecionada(d)}/>
+        <AlertBox icon={<Icon name="zap" size={14} color="#ef4444"/>} title="Urgentes sem próxima ação" count={alertas.urgenteSemAcao.length} items={alertas.urgenteSemAcao} color="#ef4444" onClick={d => setSelecionada(d)}/>
+        <AlertBox icon={<Icon name="alertTriangle" size={14} color="#dc2626"/>} title="Prazo de ação vencido" count={alertas.prazoVencido.length} items={alertas.prazoVencido} color="#dc2626" onClick={d => setSelecionada(d)}/>
+        <AlertBox icon={<Icon name="target" size={14} color="#8b5cf6"/>} title="Sem próxima ação definida" count={alertas.semAcao.length} items={alertas.semAcao} color="#8b5cf6" onClick={d => setSelecionada(d)}/>
+      </div>
+
+      <div style={s.grid2}>
+        <div style={s.card}>
+          <h4 style={s.cardTitle}><Icon name="list" size={14}/> Por Status</h4>
+          {stats.porStatus.map(st => (
+            <div key={st.value} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+              <div style={{ width: '90px', fontSize: '10px', color: '#374151' }}>{st.label}</div>
+              <div style={{ flex: 1, background: '#e5e7eb', borderRadius: '4px', height: '18px', overflow: 'hidden' }}>
+                <div style={{ width: `${stats.total > 0 ? (st.qtd/stats.total)*100 : 0}%`, background: st.color, height: '100%', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '6px', minWidth: st.qtd > 0 ? '24px' : 0 }}>
+                  {st.qtd > 0 && <span style={{ fontSize: '9px', color: 'white', fontWeight: '600' }}>{st.qtd}</span>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={s.card}>
+          <h4 style={s.cardTitle}><Icon name="tag" size={14}/> Por Eixo Temático</h4>
+          {stats.porEixo.length === 0 ? <p style={{ fontSize: '10px', color: '#9ca3af' }}>Sem dados</p> : stats.porEixo.slice(0,6).map((e, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+              <div style={{ width: '100px', fontSize: '10px', color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.nome}</div>
+              <div style={{ flex: 1, background: '#e5e7eb', borderRadius: '4px', height: '18px', overflow: 'hidden' }}>
+                <div style={{ width: `${stats.total > 0 ? (e.qtd/stats.total)*100 : 0}%`, background: config.corPrimaria, height: '100%', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '6px', minWidth: '24px' }}>
+                  <span style={{ fontSize: '9px', color: 'white', fontWeight: '600' }}>{e.qtd}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  // ===== LISTA =====
+  const renderLista = () => (
+    <div className="fade-in">
+      <div style={s.searchBar}>
+        <div style={s.searchRow}>
+          <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+            <div style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }}><Icon name="search" size={14}/></div>
+            <input type="text" placeholder="Buscar em todos os campos..." style={s.searchInput} value={busca} onChange={e => setBusca(e.target.value)}/>
+          </div>
+          <button style={{ ...s.btn, background: mostrarFiltros ? '#e5e7eb' : 'white', color: '#374151', border: '1px solid #d1d5db' }} onClick={() => setMostrarFiltros(!mostrarFiltros)}>
+            <Icon name="filter" size={12}/> Filtros
+          </button>
+          {(busca || Object.values(filtros).some(v=>v)) && <button style={{ ...s.btn, background: 'white', color: '#ef4444', border: '1px solid #fecaca' }} onClick={limparFiltros}><Icon name="x" size={12}/></button>}
+          <button style={{ ...s.btn, background: 'white', color: '#374151', border: '1px solid #d1d5db' }} onClick={exportarCSV}><Icon name="download" size={12}/> CSV</button>
+        </div>
+        {mostrarFiltros && (
+          <div style={{ ...s.searchRow, marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #e5e7eb' }}>
+            <select style={s.select} value={filtros.comunidade} onChange={e => setFiltros(p=>({...p, comunidade: e.target.value}))}><option value="">Comunidade</option>{comunidades.map(c=><option key={c}>{c}</option>)}</select>
+            <select style={s.select} value={filtros.orgao} onChange={e => setFiltros(p=>({...p, orgao: e.target.value}))}><option value="">Órgão</option>{orgaos.map(o=><option key={o}>{o}</option>)}</select>
+            <select style={s.select} value={filtros.status} onChange={e => setFiltros(p=>({...p, status: e.target.value}))}><option value="">Status</option>{statusOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>
+            <select style={s.select} value={filtros.prioridade} onChange={e => setFiltros(p=>({...p, prioridade: e.target.value}))}><option value="">Prioridade</option>{prioridadeOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>
+            <select style={s.select} value={filtros.eixo} onChange={e => setFiltros(p=>({...p, eixo: e.target.value}))}><option value="">Eixo</option>{eixos.map(e=><option key={e}>{e}</option>)}</select>
+            <select style={s.select} value={filtros.origem} onChange={e => setFiltros(p=>({...p, origem: e.target.value}))}><option value="">Origem</option>{origens.map(o=><option key={o}>{o}</option>)}</select>
+            <select style={s.select} value={filtros.comAcao} onChange={e => setFiltros(p=>({...p, comAcao: e.target.value}))}><option value="">Próx. Ação</option><option value="s">Com ação</option><option value="n">Sem ação</option></select>
+            <select style={s.select} value={filtros.comResposta} onChange={e => setFiltros(p=>({...p, comResposta: e.target.value}))}><option value="">Resposta</option><option value="s">Com</option><option value="n">Sem</option></select>
+          </div>
+        )}
+      </div>
+
+      <div style={s.card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+          <span style={{ fontSize: '11px', color: '#6b7280' }}>{filtradas.length} demanda(s)</span>
+        </div>
+        {filtradas.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '30px', color: '#9ca3af' }}><Icon name="fileText" size={36} color="#d1d5db"/><p style={{ marginTop: '10px', fontSize: '12px' }}>Nenhuma demanda encontrada</p></div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={s.table}>
+              <thead><tr>
+                <th style={s.th}>Comunidade</th>
+                <th style={s.th}>Objeto</th>
+                <th style={s.th}>Órgão</th>
+                <th style={s.th}>Status</th>
+                <th style={s.th}>Prior.</th>
+                <th style={s.th}>Próx. Ação</th>
+                <th style={s.th}>Prazo</th>
+                <th style={s.th}>Resp.</th>
+                <th style={s.th}>Ações</th>
+              </tr></thead>
+              <tbody>
+                {filtradas.map(d => {
+                  const prazoVenc = d.proximaAcaoPrazo && d.proximaAcaoPrazo < hoje;
+                  const semAcao = !['concluido','arquivado'].includes(d.status) && !d.proximaAcao;
+                  return (
+                    <tr key={d.id} style={{ background: prazoVenc ? '#fef2f2' : semAcao ? '#fffbeb' : 'transparent' }}>
+                      <td style={{ ...s.td, fontWeight: '500' }}>{d.comunidade}</td>
+                      <td style={{ ...s.td, maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={d.objeto}>{d.objeto}</td>
+                      <td style={s.td}>{d.orgaoDestinatario || '-'}</td>
+                      <td style={s.td}><Badge color={statusOptions.find(x=>x.value===d.status)?.color}>{statusOptions.find(x=>x.value===d.status)?.label}</Badge></td>
+                      <td style={s.td}><Badge color={prioridadeOptions.find(x=>x.value===d.prioridade)?.color}>{prioridadeOptions.find(x=>x.value===d.prioridade)?.label}</Badge></td>
+                      <td style={{ ...s.td, maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: semAcao ? '#f59e0b' : '#374151' }} title={d.proximaAcao}>{d.proximaAcao || <em style={{color:'#9ca3af'}}>não definida</em>}</td>
+                      <td style={{ ...s.td, color: prazoVenc ? '#dc2626' : '#374151', fontWeight: prazoVenc ? '600' : '400' }}>{d.proximaAcaoPrazo ? formatDate(d.proximaAcaoPrazo) : '-'}</td>
+                      <td style={s.td}>{d.resposta ? <Icon name="checkCircle" size={14} color="#10b981"/> : <Icon name="clock" size={14} color="#f59e0b"/>}</td>
+                      <td style={s.td}>
+                        <div style={{ display: 'flex', gap: '2px' }}>
+                          <button onClick={() => setSelecionada(d)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '3px', color: '#6b7280' }} title="Ver"><Icon name="eye" size={13}/></button>
+                          <button onClick={() => editar(d)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '3px', color: config.corPrimaria }} title="Editar"><Icon name="edit" size={13}/></button>
+                          <button onClick={() => excluir(d.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '3px', color: '#ef4444' }} title="Excluir"><Icon name="trash" size={13}/></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // ===== RESPOSTAS =====
+  const renderRespostas = () => {
+    const atual = comResposta[respIdx];
+    return (
+      <div className="fade-in">
+        <div style={s.searchBar}>
+          <div style={s.searchRow}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <div style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }}><Icon name="search" size={14}/></div>
+              <input type="text" placeholder="Buscar nas respostas..." style={s.searchInput} value={busca} onChange={e => setBusca(e.target.value)}/>
+            </div>
+          </div>
+        </div>
+
+        <div style={s.card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h4 style={{ ...s.cardTitle, marginBottom: 0 }}><Icon name="messageSquare" size={14}/> Navegador de Respostas</h4>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '11px', color: '#6b7280' }}>{comResposta.length > 0 ? `${respIdx + 1} de ${comResposta.length}` : '0'}</span>
+              <button onClick={() => navResp('up')} style={{ ...s.btn, background: 'white', color: '#374151', border: '1px solid #d1d5db', padding: '4px 8px' }}><Icon name="chevronUp" size={14}/></button>
+              <button onClick={() => navResp('down')} style={{ ...s.btn, background: 'white', color: '#374151', border: '1px solid #d1d5db', padding: '4px 8px' }}><Icon name="chevronDown" size={14}/></button>
+            </div>
+          </div>
+
+          {comResposta.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '30px', color: '#9ca3af' }}><Icon name="messageSquare" size={36} color="#d1d5db"/><p style={{ marginTop: '10px', fontSize: '12px' }}>Nenhuma resposta</p></div>
+          ) : atual && (
+            <div style={{ background: '#f9fafb', borderRadius: '8px', padding: '14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                <div>
+                  <p style={{ fontSize: '10px', color: '#6b7280', fontWeight: '600' }}>COMUNIDADE</p>
+                  <p style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{atual.comunidade}</p>
+                </div>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <Badge color={statusOptions.find(x=>x.value===atual.status)?.color}>{statusOptions.find(x=>x.value===atual.status)?.label}</Badge>
+                  <Badge color={prioridadeOptions.find(x=>x.value===atual.prioridade)?.color}>{prioridadeOptions.find(x=>x.value===atual.prioridade)?.label}</Badge>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '10px' }}>
+                <p style={{ fontSize: '10px', color: '#6b7280', fontWeight: '600' }}>OBJETO</p>
+                <p style={{ fontSize: '12px', color: '#374151', lineHeight: 1.5 }}>{atual.objeto}</p>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '8px', marginBottom: '10px' }}>
+                <div><p style={{ fontSize: '9px', color: '#6b7280', fontWeight: '600' }}>ÓRGÃO</p><p style={{ fontSize: '11px' }}>{atual.orgaoDestinatario || '-'}</p></div>
+                <div><p style={{ fontSize: '9px', color: '#6b7280', fontWeight: '600' }}>OFÍCIO</p><p style={{ fontSize: '11px', fontFamily: 'monospace' }}>{atual.numeroOficio || '-'}</p></div>
+                <div><p style={{ fontSize: '9px', color: '#6b7280', fontWeight: '600' }}>ENVIO</p><p style={{ fontSize: '11px' }}>{formatDate(atual.dataEnvio)}</p></div>
+                <div><p style={{ fontSize: '9px', color: '#6b7280', fontWeight: '600' }}>RESPOSTA</p><p style={{ fontSize: '11px' }}>{formatDate(atual.dataResposta)}</p></div>
+                <div><p style={{ fontSize: '9px', color: '#6b7280', fontWeight: '600' }}>DIAS</p><p style={{ fontSize: '11px' }}>{calcDias(atual.dataEnvio, atual.dataResposta) ?? '-'}d</p></div>
+              </div>
+
+              <div style={{ background: '#ecfdf5', borderRadius: '6px', padding: '12px', border: '1px solid #a7f3d0', marginBottom: '10px' }}>
+                <p style={{ fontSize: '10px', color: '#065f46', fontWeight: '600', marginBottom: '4px' }}>RESPOSTA DO ÓRGÃO</p>
+                <p style={{ fontSize: '12px', color: '#065f46', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{atual.resposta}</p>
+              </div>
+
+              {atual.proximaAcao && (
+                <div style={{ background: '#eff6ff', borderRadius: '6px', padding: '10px', border: '1px solid #bfdbfe', marginBottom: '10px' }}>
+                  <p style={{ fontSize: '10px', color: '#1e40af', fontWeight: '600', marginBottom: '4px' }}>PRÓXIMA AÇÃO</p>
+                  <p style={{ fontSize: '11px', color: '#1e40af' }}>{atual.proximaAcao}</p>
+                  {atual.proximaAcaoContexto && <span className="tag" style={{ background: '#dbeafe', color: '#1e40af', marginTop: '4px' }}>{atual.proximaAcaoContexto}</span>}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', marginTop: '10px' }}>
+                <button onClick={() => editar(atual)} style={{ ...s.btn, background: 'white', color: config.corPrimaria, border: `1px solid ${config.corPrimaria}` }}><Icon name="edit" size={12}/> Editar</button>
+              </div>
+            </div>
+          )}
+          <p style={{ fontSize: '10px', color: '#9ca3af', marginTop: '10px', textAlign: 'center' }}>Use ↑ ↓ para navegar</p>
+        </div>
+      </div>
+    );
+  };
+
+  // ===== FORMULÁRIO =====
+  const renderFormulario = () => (
+    <div style={s.card} className="fade-in">
+      <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '16px' }}>{editando ? 'Editar Demanda' : 'Nova Demanda'}</h2>
+
+      <div style={s.formGrid}>
+        {/* COLUNA 1 */}
+        <div>
+          <fieldset style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+            <legend style={{ fontSize: '11px', fontWeight: '600', color: '#374151', padding: '0 6px' }}>Identificação</legend>
+            
+            <div style={s.formGroup}>
+              <label style={s.label}>Comunidade *</label>
+              <input list="lst-com" style={s.input} placeholder="Digite ou selecione..." value={demandaAtual.comunidade} onChange={e => setDemandaAtual(p=>({...p, comunidade: e.target.value}))}/>
+              <datalist id="lst-com">{comunidades.map(c=><option key={c} value={c}/>)}</datalist>
+            </div>
+
+            <div style={s.formGroup}>
+              <label style={s.label}>Origem</label>
+              <select style={s.input} value={demandaAtual.origem} onChange={e => setDemandaAtual(p=>({...p, origem: e.target.value}))}>
+                <option value="">Selecione...</option>
+                {origens.map(o=><option key={o}>{o}</option>)}
+              </select>
+            </div>
+
+            <div style={s.formGroup}>
+              <label style={s.label}>Eixos Temáticos</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', padding: '6px', border: '1px solid #e5e7eb', borderRadius: '6px', background: '#f9fafb' }}>
+                {eixos.map(e => (
+                  <button key={e} type="button" onClick={() => toggleEixo(e)} style={{ padding: '3px 8px', borderRadius: '12px', border: 'none', fontSize: '10px', cursor: 'pointer', background: demandaAtual.eixosTematicos?.includes(e) ? config.corPrimaria : '#e5e7eb', color: demandaAtual.eixosTematicos?.includes(e) ? 'white' : '#374151' }}>{e}</button>
+                ))}
+              </div>
+            </div>
+
+            <div style={s.formGroup}>
+              <label style={s.label}>Data Entrada</label>
+              <input type="date" style={s.input} value={demandaAtual.dataEntrada} onChange={e => setDemandaAtual(p=>({...p, dataEntrada: e.target.value}))}/>
+            </div>
+          </fieldset>
+
+          <fieldset style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+            <legend style={{ fontSize: '11px', fontWeight: '600', color: '#374151', padding: '0 6px' }}>Contato da Comunidade</legend>
+            <div style={s.formGroup}><label style={s.label}>Nome</label><input style={s.input} placeholder="Liderança comunitária" value={demandaAtual.contatoNome} onChange={e => setDemandaAtual(p=>({...p, contatoNome: e.target.value}))}/></div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <div style={s.formGroup}><label style={s.label}>Telefone</label><input style={s.input} placeholder="(61) 99999-9999" value={demandaAtual.contatoTelefone} onChange={e => setDemandaAtual(p=>({...p, contatoTelefone: e.target.value}))}/></div>
+              <div style={s.formGroup}><label style={s.label}>E-mail</label><input type="email" style={s.input} placeholder="email@..." value={demandaAtual.contatoEmail} onChange={e => setDemandaAtual(p=>({...p, contatoEmail: e.target.value}))}/></div>
+            </div>
+          </fieldset>
+
+          <fieldset style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+            <legend style={{ fontSize: '11px', fontWeight: '600', color: '#374151', padding: '0 6px' }}>Protocolo</legend>
+            <div style={s.formGroup}>
+              <label style={s.label}>Órgão Destinatário</label>
+              <input list="lst-org" style={s.input} placeholder="Digite ou selecione..." value={demandaAtual.orgaoDestinatario} onChange={e => setDemandaAtual(p=>({...p, orgaoDestinatario: e.target.value}))}/>
+              <datalist id="lst-org">{orgaos.map(o=><option key={o} value={o}/>)}</datalist>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <div style={s.formGroup}><label style={s.label}>Nº Ofício</label><input style={s.input} placeholder="1713/2025" value={demandaAtual.numeroOficio} onChange={e => setDemandaAtual(p=>({...p, numeroOficio: e.target.value}))}/></div>
+              <div style={s.formGroup}><label style={s.label}>Data Envio</label><input type="date" style={s.input} value={demandaAtual.dataEnvio} onChange={e => setDemandaAtual(p=>({...p, dataEnvio: e.target.value}))}/></div>
+            </div>
+            <div style={s.formGroup}><label style={s.label}>Processo SEI</label><input style={s.input} placeholder="00001-00048667/2025-21" value={demandaAtual.processoSEI} onChange={e => setDemandaAtual(p=>({...p, processoSEI: e.target.value}))}/></div>
+          </fieldset>
+
+          <fieldset style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px' }}>
+            <legend style={{ fontSize: '11px', fontWeight: '600', color: '#374151', padding: '0 6px' }}>Resposta do Órgão</legend>
+            <div style={s.formGroup}><label style={s.label}>Data Resposta</label><input type="date" style={s.input} value={demandaAtual.dataResposta} onChange={e => setDemandaAtual(p=>({...p, dataResposta: e.target.value}))}/></div>
+            <div style={s.formGroup}><label style={s.label}>Conteúdo</label><textarea style={s.textarea} placeholder="Resposta recebida do órgão..." value={demandaAtual.resposta} onChange={e => setDemandaAtual(p=>({...p, resposta: e.target.value}))}/></div>
+          </fieldset>
+        </div>
+
+        {/* COLUNA 2 */}
+        <div>
+          <fieldset style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+            <legend style={{ fontSize: '11px', fontWeight: '600', color: '#374151', padding: '0 6px' }}>Objeto da Demanda</legend>
+            <div style={s.formGroup}><label style={s.label}>Descrição *</label><textarea style={{ ...s.textarea, minHeight: '100px' }} placeholder="Descreva a demanda..." value={demandaAtual.objeto} onChange={e => setDemandaAtual(p=>({...p, objeto: e.target.value}))}/></div>
+            <div style={s.formGroup}><label style={s.label}>Documentos Relacionados</label><textarea style={s.textarea} placeholder="Ofício 1713/2025 - SEI...\nFoto da situação..." value={demandaAtual.documentos} onChange={e => setDemandaAtual(p=>({...p, documentos: e.target.value}))}/></div>
+          </fieldset>
+
+          <fieldset style={{ border: '1px solid #3b82f6', borderRadius: '8px', padding: '12px', marginBottom: '12px', background: '#eff6ff' }}>
+            <legend style={{ fontSize: '11px', fontWeight: '600', color: '#1e40af', padding: '0 6px' }}>Próxima Ação (GTD)</legend>
+            <div style={s.formGroup}><label style={{ ...s.label, color: '#1e40af' }}>Descrição da Ação</label><input style={s.input} placeholder="Ligar para diretor do IBRAM..." value={demandaAtual.proximaAcao} onChange={e => setDemandaAtual(p=>({...p, proximaAcao: e.target.value}))}/></div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+              <div style={s.formGroup}>
+                <label style={{ ...s.label, color: '#1e40af' }}>Contexto</label>
+                <select style={s.input} value={demandaAtual.proximaAcaoContexto} onChange={e => setDemandaAtual(p=>({...p, proximaAcaoContexto: e.target.value}))}>
+                  <option value="">Selecione...</option>
+                  {contextosPadrao.map(c=><option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div style={s.formGroup}><label style={{ ...s.label, color: '#1e40af' }}>Responsável</label><input style={s.input} placeholder="Quem" value={demandaAtual.proximaAcaoResponsavel} onChange={e => setDemandaAtual(p=>({...p, proximaAcaoResponsavel: e.target.value}))}/></div>
+              <div style={s.formGroup}><label style={{ ...s.label, color: '#1e40af' }}>Prazo</label><input type="date" style={s.input} value={demandaAtual.proximaAcaoPrazo} onChange={e => setDemandaAtual(p=>({...p, proximaAcaoPrazo: e.target.value}))}/></div>
+            </div>
+          </fieldset>
+
+          <fieldset style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+            <legend style={{ fontSize: '11px', fontWeight: '600', color: '#374151', padding: '0 6px' }}>Providências Pendentes</legend>
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+              <input style={{ ...s.input, flex: 1 }} placeholder="Nova providência..." value={novaProv} onChange={e => setNovaProv(e.target.value)} onKeyPress={e => e.key === 'Enter' && addProv()}/>
+              <button type="button" onClick={addProv} style={s.btnPri}><Icon name="plus" size={12}/></button>
+            </div>
+            {(demandaAtual.providencias || []).length === 0 ? <p style={{ fontSize: '10px', color: '#9ca3af' }}>Nenhuma providência</p> : (
+              <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                {demandaAtual.providencias.map(p => (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px', background: p.done ? '#f0fdf4' : '#f9fafb', borderRadius: '4px', marginBottom: '4px' }}>
+                    <input type="checkbox" checked={p.done} onChange={() => toggleProv(p.id)}/>
+                    <span style={{ flex: 1, fontSize: '11px', textDecoration: p.done ? 'line-through' : 'none', color: p.done ? '#9ca3af' : '#374151' }}>{p.texto}</span>
+                    <input type="date" style={{ ...s.input, width: '110px', padding: '3px 6px', fontSize: '10px' }} value={p.prazo || ''} onChange={e => setPrazoProv(p.id, e.target.value)}/>
+                    <button type="button" onClick={() => delProv(p.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '2px' }}><Icon name="x" size={12}/></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </fieldset>
+
+          <fieldset style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+            <legend style={{ fontSize: '11px', fontWeight: '600', color: '#374151', padding: '0 6px' }}>Gestão</legend>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+              <div style={s.formGroup}><label style={s.label}>Status</label><select style={s.input} value={demandaAtual.status} onChange={e => setDemandaAtual(p=>({...p, status: e.target.value}))}>{statusOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+              <div style={s.formGroup}><label style={s.label}>Prioridade</label><select style={s.input} value={demandaAtual.prioridade} onChange={e => setDemandaAtual(p=>({...p, prioridade: e.target.value}))}>{prioridadeOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+              <div style={s.formGroup}><label style={s.label}>Responsável</label><input style={s.input} placeholder="Nome" value={demandaAtual.responsavel} onChange={e => setDemandaAtual(p=>({...p, responsavel: e.target.value}))}/></div>
+            </div>
+            <div style={s.formGroup}><label style={s.label}>Observações</label><textarea style={s.textarea} placeholder="Anotações gerais..." value={demandaAtual.observacoes} onChange={e => setDemandaAtual(p=>({...p, observacoes: e.target.value}))}/></div>
+          </fieldset>
+
+          <fieldset style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px' }}>
+            <legend style={{ fontSize: '11px', fontWeight: '600', color: '#374151', padding: '0 6px' }}>Histórico de Acompanhamento</legend>
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+              <select style={{ ...s.input, width: '100px' }} value={novoHist.tipo} onChange={e => setNovoHist(p=>({...p, tipo: e.target.value}))}>
+                <option>Ligação</option><option>E-mail</option><option>Reunião</option><option>Visita</option><option>Cobrança</option><option>Outro</option>
+              </select>
+              <input style={{ ...s.input, flex: 1 }} placeholder="Descrição da interação..." value={novoHist.descricao} onChange={e => setNovoHist(p=>({...p, descricao: e.target.value}))} onKeyPress={e => e.key === 'Enter' && addHist()}/>
+              <button type="button" onClick={addHist} style={s.btnPri}><Icon name="plus" size={12}/></button>
+            </div>
+            {(demandaAtual.historico || []).length === 0 ? <p style={{ fontSize: '10px', color: '#9ca3af' }}>Nenhum registro</p> : (
+              <div style={{ maxHeight: '120px', overflowY: 'auto' }}>
+                {[...(demandaAtual.historico || [])].reverse().map((h, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '8px', padding: '6px', background: i % 2 === 0 ? '#f9fafb' : 'white', borderRadius: '4px', marginBottom: '2px', fontSize: '10px' }}>
+                    <span style={{ color: '#6b7280', whiteSpace: 'nowrap' }}>{formatDate(h.data)}</span>
+                    <span className="tag" style={{ background: '#e5e7eb', color: '#374151' }}>{h.tipo}</span>
+                    <span style={{ flex: 1, color: '#374151' }}>{h.desc}</span>
+                    <span style={{ color: '#9ca3af' }}>{h.resp}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </fieldset>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: '8px', marginTop: '16px', justifyContent: 'flex-end' }}>
+        <button type="button" style={{ ...s.btn, background: 'white', color: '#374151', border: '1px solid #d1d5db' }} onClick={() => { setDemandaAtual({...demandaVazia}); setEditando(false); setView('lista'); }}>Cancelar</button>
+        <button type="button" style={s.btnPri} onClick={salvar}><Icon name="save" size={12}/> {editando ? 'Salvar' : 'Cadastrar'}</button>
+      </div>
+    </div>
+  );
+
+  // ===== MODAL DETALHES =====
+  const renderModalDetalhes = () => selecionada && (
+    <div style={s.modal} onClick={() => setSelecionada(null)}>
+      <div style={{ ...s.modalBox, maxWidth: '700px' }} onClick={e => e.stopPropagation()} className="fade-in">
+        <div style={s.modalHead}>
+          <h3 style={{ fontSize: '14px', fontWeight: '600', margin: 0 }}>Detalhes da Demanda</h3>
+          <button style={s.closeBtn} onClick={() => setSelecionada(null)}><Icon name="x" size={16}/></button>
+        </div>
+        <div style={s.modalBody}>
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
+            <Badge color={statusOptions.find(x=>x.value===selecionada.status)?.color}>{statusOptions.find(x=>x.value===selecionada.status)?.label}</Badge>
+            <Badge color={prioridadeOptions.find(x=>x.value===selecionada.prioridade)?.color}>{prioridadeOptions.find(x=>x.value===selecionada.prioridade)?.label}</Badge>
+            {(selecionada.eixosTematicos||[]).map(e => <span key={e} className="tag" style={{ background: `${config.corPrimaria}20`, color: config.corPrimaria }}>{e}</span>)}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+            <div>
+              <p style={{ fontSize: '10px', color: '#6b7280', fontWeight: '600' }}>COMUNIDADE</p>
+              <p style={{ fontSize: '13px', fontWeight: '600', color: '#111827' }}>{selecionada.comunidade}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: '10px', color: '#6b7280', fontWeight: '600' }}>ORIGEM</p>
+              <p style={{ fontSize: '12px', color: '#374151' }}>{selecionada.origem || '-'}</p>
+            </div>
+          </div>
+
+          {selecionada.contatoNome && (
+            <div style={{ background: '#f9fafb', borderRadius: '6px', padding: '10px', marginBottom: '12px' }}>
+              <p style={{ fontSize: '10px', color: '#6b7280', fontWeight: '600', marginBottom: '4px' }}>CONTATO</p>
+              <p style={{ fontSize: '12px', color: '#374151' }}>{selecionada.contatoNome} {selecionada.contatoTelefone && `• ${selecionada.contatoTelefone}`} {selecionada.contatoEmail && `• ${selecionada.contatoEmail}`}</p>
+            </div>
+          )}
+
+          <div style={{ marginBottom: '12px' }}>
+            <p style={{ fontSize: '10px', color: '#6b7280', fontWeight: '600' }}>OBJETO</p>
+            <p style={{ fontSize: '12px', color: '#374151', lineHeight: 1.5 }}>{selecionada.objeto}</p>
+          </div>
+
+          {selecionada.documentos && (
+            <div style={{ marginBottom: '12px' }}>
+              <p style={{ fontSize: '10px', color: '#6b7280', fontWeight: '600' }}>DOCUMENTOS</p>
+              <p style={{ fontSize: '11px', color: '#374151', whiteSpace: 'pre-wrap' }}>{selecionada.documentos}</p>
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px' }}>
+            <div><p style={{ fontSize: '9px', color: '#6b7280', fontWeight: '600' }}>ÓRGÃO</p><p style={{ fontSize: '11px' }}>{selecionada.orgaoDestinatario || '-'}</p></div>
+            <div><p style={{ fontSize: '9px', color: '#6b7280', fontWeight: '600' }}>OFÍCIO</p><p style={{ fontSize: '11px', fontFamily: 'monospace' }}>{selecionada.numeroOficio || '-'}</p></div>
+            <div><p style={{ fontSize: '9px', color: '#6b7280', fontWeight: '600' }}>SEI</p><p style={{ fontSize: '11px', fontFamily: 'monospace' }}>{selecionada.processoSEI || '-'}</p></div>
+            <div><p style={{ fontSize: '9px', color: '#6b7280', fontWeight: '600' }}>ENVIO</p><p style={{ fontSize: '11px' }}>{formatDate(selecionada.dataEnvio)}</p></div>
+          </div>
+
+          {selecionada.proximaAcao && (
+            <div style={{ background: '#eff6ff', borderRadius: '6px', padding: '10px', marginBottom: '12px', border: '1px solid #bfdbfe' }}>
+              <p style={{ fontSize: '10px', color: '#1e40af', fontWeight: '600', marginBottom: '4px' }}>PRÓXIMA AÇÃO</p>
+              <p style={{ fontSize: '12px', color: '#1e40af', marginBottom: '4px' }}>{selecionada.proximaAcao}</p>
+              <div style={{ display: 'flex', gap: '8px', fontSize: '10px' }}>
+                {selecionada.proximaAcaoContexto && <span className="tag" style={{ background: '#dbeafe', color: '#1e40af' }}>{selecionada.proximaAcaoContexto}</span>}
+                {selecionada.proximaAcaoResponsavel && <span style={{ color: '#1e40af' }}>Resp: {selecionada.proximaAcaoResponsavel}</span>}
+                {selecionada.proximaAcaoPrazo && <span style={{ color: selecionada.proximaAcaoPrazo < hoje ? '#dc2626' : '#1e40af', fontWeight: selecionada.proximaAcaoPrazo < hoje ? '600' : '400' }}>Prazo: {formatDate(selecionada.proximaAcaoPrazo)}</span>}
+              </div>
+            </div>
+          )}
+
+          {(selecionada.providencias||[]).length > 0 && (
+            <div style={{ marginBottom: '12px' }}>
+              <p style={{ fontSize: '10px', color: '#6b7280', fontWeight: '600', marginBottom: '6px' }}>PROVIDÊNCIAS</p>
+              {selecionada.providencias.map(p => (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 0', fontSize: '11px' }}>
+                  <span style={{ color: p.done ? '#10b981' : '#f59e0b' }}>{p.done ? '✓' : '○'}</span>
+                  <span style={{ textDecoration: p.done ? 'line-through' : 'none', color: p.done ? '#9ca3af' : '#374151' }}>{p.texto}</span>
+                  {p.prazo && <span style={{ fontSize: '10px', color: '#6b7280' }}>({formatDate(p.prazo)})</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {selecionada.resposta && (
+            <div style={{ background: '#ecfdf5', borderRadius: '6px', padding: '10px', marginBottom: '12px', border: '1px solid #a7f3d0' }}>
+              <p style={{ fontSize: '10px', color: '#065f46', fontWeight: '600', marginBottom: '4px' }}>RESPOSTA ({formatDate(selecionada.dataResposta)})</p>
+              <p style={{ fontSize: '12px', color: '#065f46', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{selecionada.resposta}</p>
+            </div>
+          )}
+
+          {(selecionada.historico||[]).length > 0 && (
+            <div style={{ marginBottom: '12px' }}>
+              <p style={{ fontSize: '10px', color: '#6b7280', fontWeight: '600', marginBottom: '6px' }}>HISTÓRICO</p>
+              <div style={{ maxHeight: '120px', overflowY: 'auto' }}>
+                {[...(selecionada.historico||[])].reverse().map((h, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '8px', padding: '4px 0', fontSize: '10px', borderBottom: '1px solid #f3f4f6' }}>
+                    <span style={{ color: '#6b7280', whiteSpace: 'nowrap' }}>{formatDate(h.data)}</span>
+                    <span className="tag" style={{ background: '#e5e7eb', color: '#374151' }}>{h.tipo}</span>
+                    <span style={{ flex: 1, color: '#374151' }}>{h.desc}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {selecionada.observacoes && (
+            <div style={{ background: '#fffbeb', borderRadius: '6px', padding: '10px', border: '1px solid #fde68a' }}>
+              <p style={{ fontSize: '10px', color: '#92400e', fontWeight: '600', marginBottom: '4px' }}>OBSERVAÇÕES</p>
+              <p style={{ fontSize: '11px', color: '#92400e', lineHeight: 1.5 }}>{selecionada.observacoes}</p>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '6px', marginTop: '14px', justifyContent: 'flex-end' }}>
+            <button onClick={() => editar(selecionada)} style={{ ...s.btn, background: 'white', color: config.corPrimaria, border: `1px solid ${config.corPrimaria}` }}><Icon name="edit" size={12}/> Editar</button>
+            <button onClick={() => { excluir(selecionada.id); }} style={{ ...s.btn, background: 'white', color: '#ef4444', border: '1px solid #fecaca' }}><Icon name="trash" size={12}/> Excluir</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ===== MODAL GERENCIAR LISTAS =====
+  const renderModalGerenciar = () => {
+    if (!modal) return null;
+    const configs = {
+      comunidades: { titulo: 'Comunidades', lista: comunidades, setter: setComunidades, campo: 'comunidade' },
+      orgaos: { titulo: 'Órgãos', lista: orgaos, setter: setOrgaos, campo: 'orgao' },
+      eixos: { titulo: 'Eixos Temáticos', lista: eixos, setter: setEixos, campo: 'eixo' }
+    };
+    const cfg = configs[modal];
+    if (!cfg) return null;
+
+    const contagem = (item) => {
+      if (modal === 'eixos') return demandas.filter(d => d.eixosTematicos?.includes(item)).length;
+      if (modal === 'comunidades') return demandas.filter(d => d.comunidade === item).length;
+      return demandas.filter(d => d.orgaoDestinatario === item).length;
+    };
+
+    return (
+      <div style={s.modal} onClick={() => { setModal(null); setNovoItem(''); setUnificar({ de: '', para: '' }); }}>
+        <div style={s.modalBox} onClick={e => e.stopPropagation()} className="fade-in">
+          <div style={s.modalHead}>
+            <h3 style={{ fontSize: '14px', fontWeight: '600', margin: 0 }}>{cfg.titulo}</h3>
+            <button style={s.closeBtn} onClick={() => { setModal(null); setNovoItem(''); setUnificar({ de: '', para: '' }); }}><Icon name="x" size={16}/></button>
+          </div>
+          <div style={s.modalBody}>
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
+              <input style={{ ...s.input, flex: 1 }} placeholder={`Novo(a) ${cfg.titulo.toLowerCase().slice(0,-1)}...`} value={novoItem} onChange={e => setNovoItem(e.target.value)} onKeyPress={e => e.key === 'Enter' && addItem(cfg.setter, cfg.lista)}/>
+              <button style={s.btnPri} onClick={() => addItem(cfg.setter, cfg.lista)}><Icon name="plus" size={14}/></button>
+            </div>
+
+            {modal !== 'eixos' && cfg.lista.length >= 2 && (
+              <div style={{ background: '#f9fafb', borderRadius: '6px', padding: '10px', marginBottom: '12px' }}>
+                <p style={{ fontSize: '10px', fontWeight: '600', color: '#374151', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}><Icon name="merge" size={12}/> Unificar (duplicidades)</p>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <select style={{ ...s.select, flex: 1 }} value={unificar.de} onChange={e => setUnificar(p=>({...p, de: e.target.value}))}>
+                    <option value="">De...</option>
+                    {cfg.lista.map(x => <option key={x} value={x}>{x} ({contagem(x)})</option>)}
+                  </select>
+                  <span style={{ color: '#6b7280' }}>→</span>
+                  <select style={{ ...s.select, flex: 1 }} value={unificar.para} onChange={e => setUnificar(p=>({...p, para: e.target.value}))}>
+                    <option value="">Para...</option>
+                    {cfg.lista.filter(x => x !== unificar.de).map(x => <option key={x} value={x}>{x}</option>)}
+                  </select>
+                  <button onClick={() => executarUnificar(cfg.setter, cfg.lista, cfg.campo)} disabled={!unificar.de || !unificar.para} style={{ ...s.btnPri, opacity: (!unificar.de || !unificar.para) ? 0.5 : 1 }}><Icon name="merge" size={12}/></button>
+                </div>
+              </div>
+            )}
+
+            {cfg.lista.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '20px', color: '#9ca3af' }}><p style={{ fontSize: '12px' }}>Nenhum item</p></div>
+            ) : (
+              <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                <table style={s.table}>
+                  <thead><tr><th style={s.th}>Nome</th><th style={s.th}>Qtd</th><th style={{ ...s.th, width: '40px' }}></th></tr></thead>
+                  <tbody>
+                    {cfg.lista.map(item => {
+                      const qtd = contagem(item);
+                      return (
+                        <tr key={item}>
+                          <td style={s.td}>{item}</td>
+                          <td style={s.td}>{qtd}</td>
+                          <td style={s.td}>
+                            <button onClick={() => delItem(cfg.setter, cfg.lista, item, cfg.campo)} disabled={qtd > 0} style={{ background: 'none', border: 'none', cursor: qtd > 0 ? 'not-allowed' : 'pointer', color: qtd > 0 ? '#d1d5db' : '#ef4444', padding: '2px' }}><Icon name="trash" size={13}/></button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ===== MODAL CONFIG =====
+  const renderModalConfig = () => modal === 'config' && (
+    <div style={s.modal} onClick={() => setModal(null)}>
+      <div style={{ ...s.modalBox, maxWidth: '400px' }} onClick={e => e.stopPropagation()} className="fade-in">
+        <div style={s.modalHead}>
+          <h3 style={{ fontSize: '14px', fontWeight: '600', margin: 0 }}>Configurações</h3>
+          <button style={s.closeBtn} onClick={() => setModal(null)}><Icon name="x" size={16}/></button>
+        </div>
+        <div style={s.modalBody}>
+          <div style={s.formGroup}><label style={s.label}>Título</label><input style={s.input} value={config.titulo} onChange={e => setConfig(p=>({...p, titulo: e.target.value}))}/></div>
+          <div style={s.formGroup}><label style={s.label}>Subtítulo</label><input style={s.input} value={config.subtitulo} onChange={e => setConfig(p=>({...p, subtitulo: e.target.value}))}/></div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+            <div style={s.formGroup}><label style={s.label}>Cor Primária</label><input type="color" style={{ ...s.input, height: '36px', padding: '2px' }} value={config.corPrimaria} onChange={e => setConfig(p=>({...p, corPrimaria: e.target.value}))}/></div>
+            <div style={s.formGroup}><label style={s.label}>Cor Secundária</label><input type="color" style={{ ...s.input, height: '36px', padding: '2px' }} value={config.corSecundaria} onChange={e => setConfig(p=>({...p, corSecundaria: e.target.value}))}/></div>
+            <div style={s.formGroup}><label style={s.label}>Cor Destaque</label><input type="color" style={{ ...s.input, height: '36px', padding: '2px' }} value={config.corDestaque} onChange={e => setConfig(p=>({...p, corDestaque: e.target.value}))}/></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ===== RENDER PRINCIPAL =====
+  // ===== RENDER PRINCIPAL =====
+  return (
+    <div style={{ minHeight: '100vh' }}>
+      <header style={s.header}>
+        <div style={s.headerIn}>
+          <div style={s.logo}>
+            <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: '8px', padding: '6px', display: 'flex' }}><Icon name="clipboard" size={20}/></div>
+            <div><p style={s.title}>{config.titulo}</p><p style={s.subtitle}>{config.subtitulo}</p></div>
+            {salvando && <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '8px' }}>Salvando...</span>}
+          </div>
+
+          <nav style={s.nav}>
+            <button style={s.navBtn(view === 'dashboard')} onClick={() => setView('dashboard')}><Icon name="home" size={14}/> Dashboard</button>
+            <button style={s.navBtn(view === 'lista')} onClick={() => setView('lista')}><Icon name="list" size={14}/> Demandas</button>
+            <button style={s.navBtn(view === 'respostas')} onClick={() => setView('respostas')}><Icon name="messageSquare" size={14}/> Respostas</button>
+          </nav>
+
+          <div style={s.actions}>
+            <button style={s.btn} onClick={() => setModal('comunidades')} title="Comunidades"><Icon name="users" size={12}/></button>
+            <button style={s.btn} onClick={() => setModal('orgaos')} title="Órgãos"><Icon name="building" size={12}/></button>
+            <button style={s.btn} onClick={() => setModal('eixos')} title="Eixos"><Icon name="tag" size={12}/></button>
+            <button style={s.btn} onClick={() => setModal('config')} title="Configurações"><Icon name="settings" size={12}/></button>
+            <button style={s.btn} onClick={() => fileRef.current?.click()} title="Importar"><Icon name="upload" size={12}/></button>
+            <button style={s.btn} onClick={exportar} title="Exportar"><Icon name="download" size={12}/></button>
+            <input type="file" ref={fileRef} accept=".json" style={{ display: 'none' }} onChange={importar}/>
+            <button style={s.btnPri} onClick={nova}><Icon name="plus" size={12}/> Nova</button>
+            <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.3)', margin: '0 4px' }}/>
+            <button style={s.btn} onClick={handleAlterarSenha} title="Alterar senha"><Icon name="key" size={12}/></button>
+            <button style={{ ...s.btn, background: 'rgba(239,68,68,0.2)', borderColor: 'rgba(239,68,68,0.4)' }} onClick={handleLogout} title="Sair"><Icon name="logout" size={12}/></button>
+          </div>
+        </div>
+      </header>
+
+      <main style={s.main}>
+        {view === 'dashboard' && renderDashboard()}
+        {view === 'lista' && renderLista()}
+        {view === 'respostas' && renderRespostas()}
+        {view === 'formulario' && renderFormulario()}
+      </main>
+
+      {renderModalDetalhes()}
+      {renderModalGerenciar()}
+      {renderModalConfig()}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
