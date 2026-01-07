@@ -31,7 +31,6 @@
 <script>
 // Firebase Config
 var fb = null, fbAuth = null, fbDb = null;
-var FB_LEGACY_UID = 'SC5enXvJFMQxlfRoi8UvBYUe57H3'; // UID com dados antigos
 if (typeof firebase !== 'undefined') {
   try {
     const firebaseConfig = {
@@ -600,39 +599,125 @@ function App() {
     if (!fbUser || !fbDb) { alert('Não está logado no Firebase'); return; }
     
     // Pergunta de qual UID baixar
-    const usarLegacy = confirm('Deseja recuperar dados da conta anterior?\n\nSIM = Recuperar dados antigos (95 demandas)\nNÃO = Baixar da conta atual');
-    const uidParaBaixar = usarLegacy ? FB_LEGACY_UID : fbUser.uid;
+    const usarLegacy = confirm('Deseja recuperar dados de TODAS as contas no Firebase?\n\nSIM = Buscar e mesclar dados de TODAS as contas\nNÃO = Baixar apenas da conta atual');
     
-    if (!confirm(`Baixar dados ${usarLegacy ? 'da conta ANTERIOR' : 'da conta ATUAL'}?\n\nUID: ${uidParaBaixar}\n\n(Isso substitui os dados locais)`)) return;
-    
-    setFbStatus('sync');
-    try {
-      console.log('Buscando doc:', uidParaBaixar);
-      const doc = await fbDb.collection('users').doc(uidParaBaixar).get();
-      console.log('Doc existe?', doc.exists);
-      if (doc.exists) {
-        const d = doc.data();
-        console.log('Demandas encontradas:', d.demandas?.length);
-        if (d.demandas && d.demandas.length > 0) {
-          setDemandas(d.demandas || []);
-          setComunidades(d.comunidades || []);
-          setOrgaos(d.orgaos || []);
-          setEixos(d.eixos || eixosIniciais);
-          setOrigens(d.origens || origensIniciais);
-          setContatos(d.contatos || []);
-          if (d.config) setConfig(d.config);
-          alert('✅ Baixado com sucesso!\n\n' + (d.demandas?.length || 0) + ' demandas recuperadas!');
+    if (usarLegacy) {
+      if (!confirm('Isso vai buscar TODOS os dados salvos no Firebase e mesclar.\n\nContinuar?')) return;
+      
+      setFbStatus('sync');
+      let todasDemandas = [];
+      let todosContatos = [];
+      let todasComunidades = new Set();
+      let todosOrgaos = new Set();
+      let todosEixos = new Set(eixosIniciais);
+      let todasOrigens = new Set(origensIniciais);
+      let ultimoConfig = null;
+      let encontrados = 0;
+      let totalUIDs = 0;
+      
+      try {
+        // Buscar TODOS os documentos da coleção users
+        console.log('Buscando todos os documentos em /users...');
+        const snapshot = await fbDb.collection('users').get();
+        totalUIDs = snapshot.size;
+        console.log('Total de UIDs encontrados:', totalUIDs);
+        
+        snapshot.forEach(doc => {
+          const uid = doc.id;
+          const d = doc.data();
+          console.log('UID', uid, '- Demandas:', d.demandas?.length || 0);
+          
+          if (d.demandas && d.demandas.length > 0) {
+            encontrados++;
+            // Mesclar demandas (evitar duplicatas por numeroOficio + processoSEI)
+            d.demandas.forEach(dem => {
+              const existe = todasDemandas.find(x => 
+                (x.numeroOficio && dem.numeroOficio && x.numeroOficio === dem.numeroOficio) ||
+                (x.processoSEI && dem.processoSEI && x.processoSEI.trim() === dem.processoSEI.trim())
+              );
+              if (!existe) {
+                todasDemandas.push({ ...dem });
+              }
+            });
+            // Mesclar listas
+            (d.comunidades || []).forEach(c => todasComunidades.add(c));
+            (d.orgaos || []).forEach(o => todosOrgaos.add(o));
+            (d.eixos || []).forEach(e => todosEixos.add(e));
+            (d.origens || []).forEach(o => todasOrigens.add(o));
+            (d.contatos || []).forEach(ct => {
+              if (!todosContatos.find(x => x.nome === ct.nome)) todosContatos.push({ ...ct });
+            });
+            if (d.config) ultimoConfig = d.config;
+          }
+        });
+        
+        if (todasDemandas.length > 0) {
+          // Ordenar por data de envio (mais antigas primeiro)
+          todasDemandas.sort((a, b) => (a.dataEnvio || '').localeCompare(b.dataEnvio || ''));
+          
+          // Reindexar IDs sequencialmente
+          todasDemandas = todasDemandas.map((d, i) => ({ ...d, id: i + 1 }));
+          
+          // Reindexar contatos também
+          todosContatos = todosContatos.map((c, i) => ({ ...c, id: i + 1 }));
+          
+          setDemandas(todasDemandas);
+          setComunidades([...todasComunidades].sort());
+          setOrgaos([...todosOrgaos].sort());
+          setEixos([...todosEixos].sort());
+          setOrigens([...todasOrigens].sort());
+          setContatos(todosContatos);
+          if (ultimoConfig) setConfig(ultimoConfig);
+          
+          alert('✅ Recuperação completa!\n\n' + 
+            '• ' + totalUIDs + ' conta(s) encontrada(s)\n' +
+            '• ' + encontrados + ' conta(s) com dados\n' +
+            '• ' + todasDemandas.length + ' demandas recuperadas\n' +
+            '• ' + todasComunidades.size + ' comunidades\n' +
+            '• ' + todosOrgaos.size + ' órgãos\n\n' +
+            'Clique em "Enviar Local → Nuvem" para consolidar na sua conta.');
         } else {
-          alert('⚠️ Documento encontrado mas sem demandas');
+          alert('⚠️ Nenhuma demanda encontrada no Firebase');
         }
-      } else { 
-        alert('❌ Nenhum dado encontrado para este UID:\n' + uidParaBaixar); 
+        setFbStatus('ok');
+      } catch(e) {
+        console.error('Erro ao recuperar:', e);
+        setFbStatus('err');
+        alert('❌ Erro: ' + e.message);
       }
-      setFbStatus('ok');
-    } catch(e) { 
-      console.error('Erro fbBaixar:', e); 
-      setFbStatus('err'); 
-      alert('❌ Erro ao baixar: ' + e.message); 
+    } else {
+      // Baixar apenas da conta atual
+      if (!confirm('Baixar dados da conta atual?\n\nUID: ' + fbUser.uid + '\n\n(Isso substitui os dados locais)')) return;
+      
+      setFbStatus('sync');
+      try {
+        console.log('Buscando doc:', fbUser.uid);
+        const doc = await fbDb.collection('users').doc(fbUser.uid).get();
+        console.log('Doc existe?', doc.exists);
+        if (doc.exists) {
+          const d = doc.data();
+          console.log('Demandas encontradas:', d.demandas?.length);
+          if (d.demandas && d.demandas.length > 0) {
+            setDemandas(d.demandas || []);
+            setComunidades(d.comunidades || []);
+            setOrgaos(d.orgaos || []);
+            setEixos(d.eixos || eixosIniciais);
+            setOrigens(d.origens || origensIniciais);
+            setContatos(d.contatos || []);
+            if (d.config) setConfig(d.config);
+            alert('✅ Baixado com sucesso!\n\n' + (d.demandas?.length || 0) + ' demandas recuperadas!');
+          } else {
+            alert('⚠️ Documento encontrado mas sem demandas');
+          }
+        } else { 
+          alert('❌ Nenhum dado encontrado para este UID:\n' + fbUser.uid); 
+        }
+        setFbStatus('ok');
+      } catch(e) { 
+        console.error('Erro fbBaixar:', e); 
+        setFbStatus('err'); 
+        alert('❌ Erro ao baixar: ' + e.message); 
+      }
     }
   };
 
