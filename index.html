@@ -326,6 +326,7 @@ function App() {
   const [modalExportar, setModalExportar] = useState(false);
   const [exportConfig, setExportConfig] = useState({ 
     formato: 'xlsx', 
+    orientacao: 'landscape', // landscape ou portrait
     comunidade: '', 
     orgao: '', 
     status: '', 
@@ -622,23 +623,43 @@ function App() {
         totalUIDs = snapshot.size;
         console.log('Total de UIDs encontrados:', totalUIDs);
         
+        let totalBruto = 0; // Total antes de remover duplicatas
+        let duplicatasRemovidas = 0;
+        
         snapshot.forEach(doc => {
           const uid = doc.id;
           const d = doc.data();
-          console.log('UID', uid, '- Demandas:', d.demandas?.length || 0);
+          const qtdDemandas = d.demandas?.length || 0;
+          console.log('UID', uid, '- Demandas:', qtdDemandas);
           
           if (d.demandas && d.demandas.length > 0) {
             encontrados++;
-            // Mesclar demandas (evitar duplicatas por numeroOficio + processoSEI)
+            totalBruto += qtdDemandas;
+            
+            // Mesclar demandas (evitar duplicatas)
             d.demandas.forEach(dem => {
-              const existe = todasDemandas.find(x => 
-                (x.numeroOficio && dem.numeroOficio && x.numeroOficio === dem.numeroOficio) ||
-                (x.processoSEI && dem.processoSEI && x.processoSEI.trim() === dem.processoSEI.trim())
-              );
+              // Normalizar valores para comparação
+              const numOficio = (dem.numeroOficio || '').trim().toUpperCase();
+              const procSEI = (dem.processoSEI || '').trim().replace(/\s+/g, '');
+              
+              // Verificar duplicata por múltiplos critérios
+              const existe = todasDemandas.find(x => {
+                const xNumOficio = (x.numeroOficio || '').trim().toUpperCase();
+                const xProcSEI = (x.processoSEI || '').trim().replace(/\s+/g, '');
+                
+                // Duplicata se: mesmo número de ofício OU mesmo processo SEI (quando ambos existem)
+                if (numOficio && xNumOficio && numOficio === xNumOficio) return true;
+                if (procSEI && xProcSEI && procSEI === xProcSEI) return true;
+                return false;
+              });
+              
               if (!existe) {
                 todasDemandas.push({ ...dem });
+              } else {
+                duplicatasRemovidas++;
               }
             });
+            
             // Mesclar listas
             (d.comunidades || []).forEach(c => todasComunidades.add(c));
             (d.orgaos || []).forEach(o => todosOrgaos.add(o));
@@ -651,28 +672,32 @@ function App() {
           }
         });
         
+        console.log('Total bruto:', totalBruto, '| Duplicatas removidas:', duplicatasRemovidas, '| Final:', todasDemandas.length);
+        
         if (todasDemandas.length > 0) {
           // Ordenar por data de envio (mais antigas primeiro)
           todasDemandas.sort((a, b) => (a.dataEnvio || '').localeCompare(b.dataEnvio || ''));
           
           // Reindexar IDs sequencialmente
-          todasDemandas = todasDemandas.map((d, i) => ({ ...d, id: i + 1 }));
+          const demandasFinais = todasDemandas.map((d, i) => ({ ...d, id: i + 1 }));
           
           // Reindexar contatos também
-          todosContatos = todosContatos.map((c, i) => ({ ...c, id: i + 1 }));
+          const contatosFinais = todosContatos.map((c, i) => ({ ...c, id: i + 1 }));
           
-          setDemandas(todasDemandas);
+          setDemandas(demandasFinais);
           setComunidades([...todasComunidades].sort());
           setOrgaos([...todosOrgaos].sort());
           setEixos([...todosEixos].sort());
           setOrigens([...todasOrigens].sort());
-          setContatos(todosContatos);
+          setContatos(contatosFinais);
           if (ultimoConfig) setConfig(ultimoConfig);
           
           alert('✅ Recuperação completa!\n\n' + 
             '• ' + totalUIDs + ' conta(s) encontrada(s)\n' +
             '• ' + encontrados + ' conta(s) com dados\n' +
-            '• ' + todasDemandas.length + ' demandas recuperadas\n' +
+            '• ' + totalBruto + ' demandas brutas\n' +
+            '• ' + duplicatasRemovidas + ' duplicatas removidas\n' +
+            '• ' + demandasFinais.length + ' demandas únicas\n' +
             '• ' + todasComunidades.size + ' comunidades\n' +
             '• ' + todosOrgaos.size + ' órgãos\n\n' +
             'Clique em "Enviar Local → Nuvem" para consolidar na sua conta.');
@@ -1007,9 +1032,10 @@ function App() {
     if (campos.responsavel) colunas.push({ key: 'responsavel', label: 'Responsável', width: '100px' });
     if (campos.documentos) colunas.push({ key: 'documentos', label: 'Documentos', width: '120px' });
     
+    const orientacao = exportConfig.orientacao || 'landscape';
     let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${titulo}</title>
     <style>
-      @media print { @page { size: A4 landscape; margin: 10mm; } }
+      @media print { @page { size: A4 ${orientacao}; margin: 10mm; } }
       body { font-family: Arial, sans-serif; font-size: 9px; color: #333; line-height: 1.4; }
       h1 { color: ${config.corPrimaria}; font-size: 16px; margin-bottom: 5px; }
       .info { color: #666; font-size: 9px; margin-bottom: 15px; border-bottom: 2px solid ${config.corPrimaria}; padding-bottom: 10px; }
@@ -1136,9 +1162,10 @@ function App() {
       return a.proximaAcaoPrazo.localeCompare(b.proximaAcaoPrazo);
     });
     
+    const orientacao = exportConfig.orientacao || 'landscape';
     let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${titulo}</title>
     <style>
-      @media print { @page { size: A4 landscape; margin: 10mm; } }
+      @media print { @page { size: A4 ${orientacao}; margin: 10mm; } }
       body { font-family: Arial, sans-serif; font-size: 9px; color: #333; line-height: 1.4; }
       h1 { color: ${config.corPrimaria}; font-size: 16px; margin-bottom: 5px; }
       .info { color: #666; font-size: 9px; margin-bottom: 15px; border-bottom: 2px solid ${config.corPrimaria}; padding-bottom: 10px; }
@@ -2183,6 +2210,27 @@ function App() {
               ))}
             </div>
           </div>
+
+          {/* Orientação do PDF */}
+          {(exportConfig.formato === 'pdf' || exportConfig.formato === 'acoes') && (
+            <div style={s.formGroup}>
+              <label style={s.label}>Orientação da Página</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button type="button" onClick={() => setExportConfig(p => ({...p, orientacao: 'landscape'}))}
+                  style={{ flex: 1, padding: '10px', borderRadius: '8px', border: exportConfig.orientacao === 'landscape' ? `2px solid ${config.corPrimaria}` : '1px solid #e5e7eb', background: exportConfig.orientacao === 'landscape' ? `${config.corPrimaria}10` : 'white', cursor: 'pointer', textAlign: 'center' }}>
+                  <div style={{ fontSize: '16px', marginBottom: '4px' }}>📄</div>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: exportConfig.orientacao === 'landscape' ? config.corPrimaria : '#374151' }}>Paisagem</div>
+                  <div style={{ fontSize: '9px', color: '#9ca3af' }}>Mais colunas</div>
+                </button>
+                <button type="button" onClick={() => setExportConfig(p => ({...p, orientacao: 'portrait'}))}
+                  style={{ flex: 1, padding: '10px', borderRadius: '8px', border: exportConfig.orientacao === 'portrait' ? `2px solid ${config.corPrimaria}` : '1px solid #e5e7eb', background: exportConfig.orientacao === 'portrait' ? `${config.corPrimaria}10` : 'white', cursor: 'pointer', textAlign: 'center' }}>
+                  <div style={{ fontSize: '16px', marginBottom: '4px', transform: 'rotate(90deg)', display: 'inline-block' }}>📄</div>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: exportConfig.orientacao === 'portrait' ? config.corPrimaria : '#374151' }}>Retrato</div>
+                  <div style={{ fontSize: '9px', color: '#9ca3af' }}>Mais linhas</div>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Seleção de Campos para PDF */}
           {exportConfig.formato === 'pdf' && (
